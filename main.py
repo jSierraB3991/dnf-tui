@@ -31,10 +31,10 @@ def fill_table(table: DataTable, packages: list[dnf.Package]) -> None:
     for pkg in packages:
         table.add_row(pkg.name, pkg.version, pkg.repo, pkg.summary, key=f"{pkg.name}@{pkg.version}")
 
-
 class DnfTUI(App):
     TITLE = libs.TITLE
     BINDINGS = libs.BINDINGS
+    is_first_update = False
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -63,23 +63,35 @@ class DnfTUI(App):
             self.run_worker(self._load_upgrades(), exclusive=True)
 
     async def _load_installed(self) -> None:
-        self.notify("Cargando", severity="information")
+        table, _ = self._current_table_and_action()
+        table.loading = True
+        table = self.query_one("#installed-table", DataTable)
+        table.clear()
         packages = await dnf.list_installed()
         fill_table(self.query_one("#installed-table", DataTable), packages)
-        self.notify("Finalizado", severity="information")
+        table.loading = False
 
     async def _load_upgrades(self) -> None:
-        packages = await dnf.list_upgrades()
+        table, _ = self._current_table_and_action()
+        table.loading = True
+        packages = await dnf.list_upgrades(self.is_first_update)
         fill_table(self.query_one("#upgrades-table", DataTable), packages)
+        table.loading = False
+        self.is_first_update = False
 
     async def on_tabbed_content_tab_activated(self, event) -> None:
         self.action_refresh()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
+
+        table, _ = self._current_table_and_action()
+        table.loading = True
+
         if event.input.id != "search-input":
             return
         packages = await dnf.search(event.value)
         fill_table(self.query_one("#search-table", DataTable), packages)
+        table.loading = False
 
     def _current_table_and_action(self) -> tuple[DataTable, str] | None:
         active = self.query_one(TabbedContent).active
@@ -100,6 +112,9 @@ class DnfTUI(App):
         return str(row_key.value) if row_key.value else None
 
     async def _do_transaction(self, action: str, package: str) -> None:
+        table, _ = self._current_table_and_action()
+        table.loading = True
+
         preview = await dnf.transaction_preview(action, package)
         title = f"{action.upper()} · {package}"
         confirmed = await self.push_screen_wait(confirm_screen.ConfirmScreen(title, preview))
@@ -112,6 +127,7 @@ class DnfTUI(App):
         else:
             self.notify(f"Falló {action} de {package}: {output[-200:]}", severity="error")
         self.action_refresh()
+        table.loading = False
 
     def action_install_selected(self) -> None:
         info = self._current_table_and_action()
@@ -140,6 +156,14 @@ class DnfTUI(App):
         if name:
             self.run_worker(self._do_transaction("upgrade", name), exclusive=True)
 
+    async def _load_installed(self) -> None:
+        table = self.query_one("#installed-table", DataTable)
+        table.loading = True
+        try:
+            packages = await dnf.list_installed()
+            fill_table(table, packages)
+        finally:
+            table.loading = False
 
 if __name__ == "__main__":
     DnfTUI().run()
