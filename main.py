@@ -34,7 +34,12 @@ def fill_table(table: DataTable, packages: list[dnf.Package]) -> None:
 class DnfTUI(App):
     TITLE = libs.TITLE
     BINDINGS = libs.BINDINGS
-    is_first_update = False
+    is_first_update = True
+
+    def _set_tabs_disabled(self, disabled: bool) -> None:
+        tabbed = self.query_one(TabbedContent)
+        for tab_id in ("search", "installed", "upgrades"):
+            tabbed.get_tab(tab_id).disabled = disabled
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -65,19 +70,23 @@ class DnfTUI(App):
     async def _load_installed(self) -> None:
         table, _ = self._current_table_and_action()
         table.loading = True
+        self._set_tabs_disabled(True)
         table = self.query_one("#installed-table", DataTable)
         table.clear()
         packages = await dnf.list_installed()
         fill_table(self.query_one("#installed-table", DataTable), packages)
         table.loading = False
+        self._set_tabs_disabled(False)
 
     async def _load_upgrades(self) -> None:
         table, _ = self._current_table_and_action()
         table.loading = True
+        self._set_tabs_disabled(True)
         packages = await dnf.list_upgrades(self.is_first_update)
         fill_table(self.query_one("#upgrades-table", DataTable), packages)
         table.loading = False
         self.is_first_update = False
+        self._set_tabs_disabled(False)
 
     async def on_tabbed_content_tab_activated(self, event) -> None:
         self.action_refresh()
@@ -86,12 +95,15 @@ class DnfTUI(App):
 
         table, _ = self._current_table_and_action()
         table.loading = True
+        self._set_tabs_disabled(True)
 
         if event.input.id != "search-input":
             return
         packages = await dnf.search(event.value)
         fill_table(self.query_one("#search-table", DataTable), packages)
+
         table.loading = False
+        self._set_tabs_disabled(False)
 
     def _current_table_and_action(self) -> tuple[DataTable, str] | None:
         active = self.query_one(TabbedContent).active
@@ -114,6 +126,7 @@ class DnfTUI(App):
     async def _do_transaction(self, action: str, package: str) -> None:
         table, _ = self._current_table_and_action()
         table.loading = True
+        self._set_tabs_disabled(True)
 
         preview = await dnf.transaction_preview(action, package)
         title = f"{action.upper()} · {package}"
@@ -127,7 +140,9 @@ class DnfTUI(App):
         else:
             self.notify(f"Falló {action} de {package}: {output[-200:]}", severity="error")
         self.action_refresh()
+
         table.loading = False
+        self._set_tabs_disabled(True)
 
     def action_install_selected(self) -> None:
         info = self._current_table_and_action()
@@ -159,11 +174,13 @@ class DnfTUI(App):
     async def _load_installed(self) -> None:
         table = self.query_one("#installed-table", DataTable)
         table.loading = True
+        self._set_tabs_disabled(True)
         try:
             packages = await dnf.list_installed()
             fill_table(table, packages)
         finally:
             table.loading = False
+            self._set_tabs_disabled(False)
 
 if __name__ == "__main__":
     DnfTUI().run()
