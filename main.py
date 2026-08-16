@@ -140,9 +140,8 @@ class DnfTUI(App):
         else:
             self.notify(f"Falló {action} de {package}: {output[-200:]}", severity="error")
         self.action_refresh()
-
         table.loading = False
-        self._set_tabs_disabled(True)
+        self._set_tabs_disabled(False)
 
     def action_install_selected(self) -> None:
         info = self._current_table_and_action()
