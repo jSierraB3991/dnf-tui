@@ -48,27 +48,21 @@ async def list_upgrades(is_first_update: bool) -> list[Package]:
         _, out, _ = await _run("dnf", "repoquery", "-q", '--refresh', "--upgrades", "--qf", libs.QF)
         return _parse_repoquery(out)
     else:
-        data = await list_check_updates()
-        return data
-
-async def list_check_updates() -> list[Package]:
-    _, out, _ = await _run("dnf", "check-update")
-    packages = []
-    for line in out.splitlines():
-        parts = line.split()
-        if len(parts) != 3 or "." not in parts[0]:
-            continue
-        name_arch, version, repo = parts
-        name, _, _arch = name_arch.rpartition(".")
-        packages.append(Package(name=name, version=version, repo=repo))
-    return packages
+        _, out, _ = await _run("dnf", "repoquery", "-q",  "--upgrades", "--qf", libs.QF)
+        return _parse_repoquery(out)
 
 async def transaction_preview(action: str, package: str) -> str:
     """action: 'install' | 'remove' | 'upgrade'. Devuelve el resumen de la transacción."""
-    _, out, err = await _run("dnf", action, "-y", "--assumeno", package)
-    return out or err
+    code, out, err = await _run("dnf", action, "-y", "--assumeno", package)
+    return code, out or err
 
 async def run_transaction(action: str, package: str) -> tuple[int, str]:
     """Ejecuta de verdad la transacción (requiere permisos de root)."""
-    code, out, err = await _run("sudo", "dnf", action, "-y", package)
+    code, out, err = await _run("pkexec", "dnf", action, "-y", package)
+    return code, out + err
+
+
+async def update_all() -> tuple[int, str]:
+    """Ejecuta de verdad la transacción (requiere permisos de root)."""
+    code, out, err = await _run("pkexec", "dnf", "update", "-y")
     return code, out + err
