@@ -121,18 +121,28 @@ class DnfTUI(App):
         if table.cursor_row is None:
             return None
         row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
-        return str(row_key.value) if row_key.value else None
+        if not row_key.value:
+            return None
+        name, _, _version = str(row_key.value).partition("@")
+        return name
 
     async def _do_transaction(self, action: str, package: str) -> None:
         table, _ = self._current_table_and_action()
         table.loading = True
         self._set_tabs_disabled(True)
 
-        preview = await dnf.transaction_preview(action, package)
+        code, preview = await dnf.transaction_preview(action, package)
+        if code == 0:
+            self.notify(f"{package}: {preview}", severity="information")
+            table.loading = False
+            self._set_tabs_disabled(False)
+            return
         title = f"{action.upper()} · {package}"
         confirmed = await self.push_screen_wait(confirm_screen.ConfirmScreen(title, preview))
         if not confirmed:
             self.notify("Cancelado", severity="warning")
+            table.loading = False
+            self._set_tabs_disabled(False)
             return
         code, output = await dnf.run_transaction(action, package)
         if code == 0:
