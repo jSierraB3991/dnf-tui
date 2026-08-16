@@ -36,7 +36,7 @@ def _parse_repoquery(output: str) -> list[Package]:
 async def search(query: str) -> list[Package]:
     if not query.strip():
         return []
-    _, out, _ = await _run("dnf", "repoquery", "-q", "--qf", libs.QF, query)
+    _, out, _ = await _run("dnf", "repoquery", "-q", "--qf", libs.QF, f'*{query}*')
     return _parse_repoquery(out)
 
 async def list_installed() -> list[Package]:
