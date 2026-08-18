@@ -23,7 +23,11 @@ BINDINGS = [
     ("i", "install_selected", "Instalar"),
     ("r", "remove_selected", "Eliminar"),
     ("u", "upgrade_selected", "Actualizar"),
+    ("U", "upgrade_all", "Actualizar TODO"),
     ("f5", "refresh", "Refrescar"),
+    ("/", "start_search", "Buscar"),
+    ("f4", "next_match", "Sig. coincidencia"),
+    ("f3", "prev_match", "Coincidencia anterior"),
     ("q", "quit", "Salir"),
 ]
 

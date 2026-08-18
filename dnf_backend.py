@@ -51,18 +51,18 @@ async def list_upgrades(is_first_update: bool) -> list[Package]:
         _, out, _ = await _run("dnf", "repoquery", "-q",  "--upgrades", "--qf", libs.QF)
         return _parse_repoquery(out)
 
-async def transaction_preview(action: str, package: str) -> str:
+async def transaction_preview(action: str, package: str) -> tuple[int, str]:
     """action: 'install' | 'remove' | 'upgrade'. Devuelve el resumen de la transacción."""
-    code, out, err = await _run("dnf", action, "-y", "--assumeno", package)
+    if package == '':
+        code, out, err = await _run("dnf", action, "-y", "--assumeno")
+    else:
+        code, out, err = await _run("dnf", action, "-y", "--assumeno", package)
     return code, out or err
 
 async def run_transaction(action: str, package: str) -> tuple[int, str]:
     """Ejecuta de verdad la transacción (requiere permisos de root)."""
-    code, out, err = await _run("pkexec", "dnf", action, "-y", package)
-    return code, out + err
-
-
-async def update_all() -> tuple[int, str]:
-    """Ejecuta de verdad la transacción (requiere permisos de root)."""
-    code, out, err = await _run("pkexec", "dnf", "update", "-y")
+    if package == '':
+        code, out, err = await _run("pkexec", "dnf", action, "-y")
+    else:
+        code, out, err = await _run("pkexec", "dnf", action, "-y", package)
     return code, out + err
