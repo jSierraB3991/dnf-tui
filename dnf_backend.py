@@ -3,6 +3,7 @@
 import asyncio
 from dataclasses import dataclass
 import libs as libs
+import json
 
 @dataclass
 class Package:
@@ -10,6 +11,19 @@ class Package:
     version: str
     repo: str
     summary: str = ""
+
+@dataclass
+class History:
+    def __init__(self, id, command_line, start_time, end_time, user_id, status, releasever, altered_count):
+        self.id = id
+        self.command_line = command_line
+        self.start_time = start_time
+        self.end_time = end_time
+        self.user_id = user_id
+        self.status = status
+        self.releasever = releasever
+        self.altered_count = altered_count
+
 
 async def _run(*args: str) -> tuple[int, str, str]:
     proc = await asyncio.create_subprocess_exec(
@@ -32,6 +46,12 @@ def _parse_repoquery(output: str) -> list[Package]:
         summary = parts[3] if len(parts) > 3 else ""
         packages.append(Package(name=name, version=version, repo=repo, summary=summary))
     return packages
+
+def _parse_history(output: str) -> list[History]:
+    data_list = json.loads(output)
+    result = [History(**item) for item in data_list]
+    return  result
+    
  
 async def search(query: str) -> list[Package]:
     if not query.strip():
@@ -66,3 +86,15 @@ async def run_transaction(action: str, package: str) -> tuple[int, str]:
     else:
         code, out, err = await _run("pkexec", "dnf", action, "-y", package)
     return code, out + err
+
+async def list_history() -> list[History]:
+    _, out, _ = await _run("dnf", "history", "list", "--json")
+    return _parse_history(out)
+
+async def list_history_by_version_id(id_version: str) -> str:
+    _, out, _ = await _run("dnf", "history", "info", id_version, "--json")
+    return out
+
+async def info_by_package(package: str) -> str:
+    _, out, _ = await _run("dnf",  "info", package)
+    return out

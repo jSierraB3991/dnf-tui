@@ -26,6 +26,8 @@ from textual.widgets import (
 import dnf_backend as dnf
 import libs as libs
 import confirm_screen as confirm_screen
+import history_screnn as history_screen
+import show_data_screen as show_data_sreen
 from plyer import notification
 
 
@@ -33,6 +35,16 @@ def fill_table(table: DataTable, packages: list[dnf.Package]) -> None:
     table.clear()
     for pkg in packages:
         table.add_row(pkg.name, pkg.version, pkg.repo, pkg.summary, key=f"{pkg.name}@{pkg.version}")
+
+def fill_history(table: DataTable, history: list[dnf.History]) -> None:
+    table.clear()
+    for h in history:
+        table.add_row(h.id, h.status, h.releasever, h.altered_count, h.command_line, key=f"{h.id}")
+
+SEARCH_TABLE = "search-table"
+INSTALLED_TABLE="installed-table"
+HISTORY_TABLE="history-table"
+UPGRADES_TABLE="upgrades-table"
 
 class DnfTUI(App):
     TITLE = libs.TITLE
@@ -49,28 +61,34 @@ class DnfTUI(App):
         with TabbedContent(initial="search"):
             with TabPane(libs.TAB_SEARCH_TEXT, id="search"):
                 yield Input(placeholder=libs.INPUT_SEARCH_PLACE_HOLDER, id="search-input")
-                yield DataTable(id="search-table")
+                yield DataTable(id=SEARCH_TABLE)
             with TabPane(libs.TAB_INSTALLED_TEXT, id="installed"):
                 yield Input(placeholder="/ buscar...", id="vim-search-input")
-                yield DataTable(id="installed-table")
+                yield DataTable(id=INSTALLED_TABLE)
                 yield Button("↑ Ir arriba", id="scroll-top-btn")
+            with TabPane(libs.TAB_HISTORY_TEXT, id="history"):
+                yield DataTable(id=HISTORY_TABLE)
             with TabPane(libs.TAB_UPDATE_TEXT, id="upgrades"):
-                yield DataTable(id="upgrades-table")
+                yield DataTable(id=UPGRADES_TABLE)
+
         yield Footer()
 
     def on_mount(self) -> None:
         self._search_matches: list[int] = []
         self._search_index: int = -1
         self.query_one("#vim-search-input", Input).display = False
-        for table_id in ("search-table", "installed-table", "upgrades-table"):
+        for table_id in (SEARCH_TABLE, INSTALLED_TABLE, UPGRADES_TABLE, HISTORY_TABLE):
             table = self.query_one(f"#{table_id}", DataTable)
-            table.add_columns(*libs.COLUMNS)
+            if table_id == HISTORY_TABLE:
+                table.add_columns(*libs.COLUMNS_HISTORY)
+            else:
+                table.add_columns(*libs.COLUMNS_PACKAGES)
             table.cursor_type = "row"
         self.action_refresh()
     
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "scroll-top-btn":
-            table = self.query_one("#installed-table", DataTable)
+            table = self.query_one(f"#{INSTALLED_TABLE}", DataTable)
             table.cursor_coordinate = (0, 0)
             table.scroll_home(animate=False)
 
@@ -79,7 +97,7 @@ class DnfTUI(App):
         search_input = self.query_one("#vim-search-input", Input)
         if event.key == "escape" and search_input.has_focus:
             search_input.display = False
-            self.query_one("#installed-table", DataTable).focus()
+            self.query_one(f"#{INSTALLED_TABLE}", DataTable).focus()
 
     def action_start_search(self) -> None:
         if self.query_one(TabbedContent).active != "installed":
@@ -92,7 +110,7 @@ class DnfTUI(App):
     
     def _run_vim_search(self, query: str) -> None:
         query = query.strip().lower()
-        table = self.query_one("#installed-table", DataTable)
+        table = self.query_one(f"#{INSTALLED_TABLE}", DataTable)
         if not query:
             self._search_matches = []
             return
@@ -118,12 +136,12 @@ class DnfTUI(App):
     def action_next_match(self) -> None:
         if self.query_one(TabbedContent).active != "installed":
             return
-        self._jump_to_match(self.query_one("#installed-table", DataTable), step=1)
+        self._jump_to_match(self.query_one(f"#{INSTALLED_TABLE}", DataTable), step=1)
  
     def action_prev_match(self) -> None:
         if self.query_one(TabbedContent).active != "installed":
             return
-        self._jump_to_match(self.query_one("#installed-table", DataTable), step=-1)
+        self._jump_to_match(self.query_one(f"#{INSTALLED_TABLE}", DataTable), step=-1)
 
     def action_refresh(self) -> None:
         active = self.query_one(TabbedContent).active
@@ -131,24 +149,36 @@ class DnfTUI(App):
             self.run_worker(self._load_installed(), exclusive=True)
         elif active == "upgrades":
             self.run_worker(self._load_upgrades(), exclusive=True)
+        elif active == "history":
+            self.run_worker(self._load_history(), exclusive=True)
 
     async def _load_installed(self) -> None:
         table, _ = self._current_table_and_action()
         table.loading = True
         self._set_tabs_disabled(True)
-        table = self.query_one("#installed-table", DataTable)
+        table = self.query_one(f"#{INSTALLED_TABLE}", DataTable)
         table.clear()
         packages = await dnf.list_installed()
-        fill_table(self.query_one("#installed-table", DataTable), packages)
+        fill_table(self.query_one(f"#{INSTALLED_TABLE}", DataTable), packages)
         table.loading = False
         self._set_tabs_disabled(False)
+
+    async def _load_history(self) -> None:
+        table, _ = self._current_table_and_action()
+        table.loading = True
+        self._set_tabs_disabled(True)
+        history = await dnf.list_history()
+        fill_history(self.query_one(f"#{HISTORY_TABLE}", DataTable), history)
+        table.loading = False
+        self._set_tabs_disabled(False)
+
 
     async def _load_upgrades(self) -> None:
         table, _ = self._current_table_and_action()
         table.loading = True
         self._set_tabs_disabled(True)
         packages = await dnf.list_upgrades(self.is_first_update)
-        fill_table(self.query_one("#upgrades-table", DataTable), packages)
+        fill_table(self.query_one(f"#{UPGRADES_TABLE}", DataTable), packages)
         table.loading = False
         if self.is_first_update:
             self.is_first_update = False
@@ -175,23 +205,24 @@ class DnfTUI(App):
         self._set_tabs_disabled(True)
         if event.input.id == "search-input":
             packages = await dnf.search(event.value)
-            fill_table(self.query_one("#search-table", DataTable), packages)
+            fill_table(self.query_one(f"#{SEARCH_TABLE}", DataTable), packages)
             table.loading = False
             self._set_tabs_disabled(False)
             return
         if event.input.id == "vim-search-input":
             self._run_vim_search(event.value)
             event.input.display = False
-            self.query_one("#installed-table", DataTable).focus()
+            self.query_one(f"#{INSTALLED_TABLE}", DataTable).focus()
         table.loading = False
         self._set_tabs_disabled(False)
 
     def _current_table_and_action(self) -> tuple[DataTable, str] | None:
         active = self.query_one(TabbedContent).active
         mapping = {
-            "search": ("search-table", "install"),
-            "installed": ("installed-table", "remove"),
-            "upgrades": ("upgrades-table", "upgrade"),
+            "search": (SEARCH_TABLE, "install"),
+            "installed": (INSTALLED_TABLE, "remove"),
+            "upgrades": (UPGRADES_TABLE, "upgrade"),
+            "history": (HISTORY_TABLE, "info"),
         }
         if active not in mapping:
             return None
@@ -262,7 +293,7 @@ class DnfTUI(App):
             self.run_worker(self._do_transaction("upgrade", name), exclusive=True)
 
     async def _load_installed(self) -> None:
-        table = self.query_one("#installed-table", DataTable)
+        table = self.query_one(f"#{INSTALLED_TABLE}", DataTable)
         table.loading = True
         self._set_tabs_disabled(True)
         try:
@@ -274,6 +305,31 @@ class DnfTUI(App):
     
     def action_upgrade_all(self) -> None:
         self.run_worker(self._do_transaction("upgrade", ""), exclusive=True)
+
+    def action_info_history_selected(self) -> None:
+        self.run_worker(self._show_history(), exclusive=True)
+
+    async def _show_history(self) -> None:
+        table, _ = self._current_table_and_action()
+        table.loading = True
+        self._set_tabs_disabled(True)
+        info = self._current_table_and_action()
+        if not info:
+            return
+        table, _ = info
+        if table.id == HISTORY_TABLE:
+            history_id = self._selected_package_name(table)
+            history = await dnf.list_history_by_version_id(history_id)
+            table.loading = False
+            self._set_tabs_disabled(False)
+            await self.push_screen_wait(history_screen.HistoryScreen(history))
+        else:
+            package = self._selected_package_name(table)
+            package_info = await dnf.info_by_package(package)
+            table.loading = False
+            self._set_tabs_disabled(False)
+            await self.push_screen_wait(show_data_sreen.ShowDataScreen(package_info, f"Información del paquete {package}"))
+
 
 
 if __name__ == "__main__":
