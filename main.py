@@ -53,7 +53,7 @@ class DnfTUI(App):
 
     def _set_tabs_disabled(self, disabled: bool) -> None:
         tabbed = self.query_one(TabbedContent)
-        for tab_id in ("search", "installed", "upgrades"):
+        for tab_id in ("search", "installed", "upgrades", "history"):
             tabbed.get_tab(tab_id).disabled = disabled
 
     def compose(self) -> ComposeResult:
@@ -270,6 +270,8 @@ class DnfTUI(App):
         if not info:
             return
         table, _ = info
+        if table.id == HISTORY_TABLE or table.id == UPGRADES_TABLE:
+            return
         name = self._selected_package_name(table)
         if name:
             self.run_worker(self._do_transaction("install", name), exclusive=True)
